@@ -1,0 +1,160 @@
+#include <ESP32Encoder.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
+ 
+// WiFi and MQTT details
+const char* ssid = "Issacb20";
+const char* password = "electricalengineering";
+const char* mqtt_server = "B01-20.local";
+ 
+WiFiClient espClient;
+PubSubClient client(espClient);
+ 
+#define enA 33  //EnableA command line
+#define enB 25  //EnableA command line
+ 
+#define INa 26  //Channel A Direction
+#define INb 27  //Channel A Direction
+#define INc 14  //Channel B Direction
+#define INd 12  //Channel B Direction
+ 
+byte speedSetting = 200;   //initial speed = 0
+byte speedRampFlag = 1;  //define a direction controller for the loop
+byte changeDirection = 0;
+ 
+// setting PWM properties
+const int freq = 2000;
+const int servoFrequency = 50;
+const int ledChannela = 0;
+const int ledChannelb = 1;
+const int servoChannel = 2;
+const int resolution = 8;
+const int servoResolution = 12;
+ 
+int servoPin = 13;
+float steeringAngle;  // variable to store the servo position
+ 
+void setup() {
+  // put your setup code here, to run once:
+ 
+  pinMode(INa, OUTPUT);
+  pinMode(INb, OUTPUT);
+  pinMode(INc, OUTPUT);
+  pinMode(INd, OUTPUT);
+ 
+  // configure LED PWM functionalitites
+  ledcSetup(ledChannela, freq, resolution);
+  ledcSetup(ledChannelb, freq, resolution);
+  ledcSetup(servoChannel, servoFrequency, servoResolution); //servo setup on PWM2, 50Hz, 12-bit (0-4096)
+ 
+  //attach the channel to the GPIO to be controlled
+  ledcAttachPin(enA, ledChannela);
+  ledcAttachPin(enB, ledChannelb);
+  ledcAttachPin(servoPin, servoChannel);
+ 
+  //initialise Serial Communication
+  Serial.begin(9600);
+ 
+ 
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("WIFI not connected");
+  }
+  Serial.println("WIFI connected");
+ 
+  // Connect to MQTT
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+  while (!client.connected()) {
+    if (client.connect("ESP32Client")) {
+      Serial.println("Trying to connect to MQTT Server");
+    } else {
+      delay(5000);
+      Serial.println("Could not connect. Connection retrying ...");
+    }
+  }
+  client.subscribe("esp32/stopmotors");
+}
+void reconnect() {
+  // loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // attempt to connect
+    if (client.connect("ESP8266Client")) {
+      Serial.println("connected");
+      // subscribe
+      client.subscribe("esp32/stopmotors");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+ 
+void motors(int leftSpeed, int rightSpeed) {
+  //set individual motor speed
+  //direction is set separately
+ 
+  ledcWrite(ledChannela, leftSpeed);
+  ledcWrite(ledChannelb, rightSpeed);
+ 
+  delay(25);
+}
+ 
+void goForwards() {
+  //direction is set to 0
+  digitalWrite(INa, HIGH);
+  digitalWrite(INb, LOW);
+  digitalWrite(INc, HIGH);
+  digitalWrite(INd, LOW);
+}
+ 
+void goBackwards() {
+  //direction is set to 1
+  digitalWrite(INa, LOW);
+  digitalWrite(INb, HIGH);
+  digitalWrite(INc, LOW);
+  digitalWrite(INd, HIGH);
+}
+ 
+void stopMotors() {
+  //stop both motors
+  digitalWrite(INa, LOW);
+  digitalWrite(INb, LOW);
+  digitalWrite(INc, LOW);
+  digitalWrite(INd, LOW);
+}
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  
+      goForwards();
+      motors(150,150);
+      Serial.println("Going forwards");
+}
+ 
+void callback(char* topic, byte* message, unsigned int length) {
+  String messageTemp;
+  
+  for (int i = 0; i < length; i++) {
+    messageTemp += (char)message[i];
+  }
+ 
+  if (String(topic) == "esp32/stopmotors") {
+     if(messageTemp=="stop_car_B")
+        {
+          stopMotors();
+          motors(0,0);
+        } 
+ 
+    }
+    
+    
+  }
